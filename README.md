@@ -77,6 +77,10 @@ Expected output:
 
 Processor running on http://0.0.0.0:8001
 
+
+## Run the benchmark
+.\run-benchmark.cmd --candidate-url http://127.0.0.1:8080 --preset smoke  ## This command can be used for Bench mark 
+
 ## API Endpoints
 
 ### Health Check
