@@ -77,9 +77,15 @@ Expected output:
 
 Processor running on http://0.0.0.0:8001
 
+### Run Benchmark
 
-## Run the benchmark
-.\run-benchmark.cmd --candidate-url http://127.0.0.1:8080 --preset smoke  ## This command can be used for Bench mark 
+Start the supplied processor, API, and two workers as described above.
+
+```powershell
+.\run-benchmark.cmd --candidate-url http://127.0.0.1:8080 --preset smoke
+.\run-benchmark.cmd --candidate-url http://127.0.0.1:8080 --preset sustained
+.\run-benchmark.cmd --candidate-url http://127.0.0.1:8080 --preset overlapping
+```
 
 ## API Endpoints
 
