@@ -921,6 +921,7 @@ class Worker:
                 UPDATE records
                 SET status='SUCCEEDED',
                     value=?,
+                    value_json=?,
                     receipt=?,
                     error_code=NULL,
                     claimed_by=NULL,
