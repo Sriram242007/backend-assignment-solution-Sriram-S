@@ -623,7 +623,7 @@ async def get_result(job_id: str):
         for task in task_rows:
             records = conn.execute(
                 """
-                SELECT record_id, status, attempts, value, receipt, error_code
+                SELECT record_id, status, attempts, value_json, receipt, error_code
                 FROM records
                 WHERE task_db_id=?
                 ORDER BY id
@@ -917,21 +917,18 @@ class Worker:
         conn = connect_db()
         try:
             conn.execute(
-                """
-                UPDATE records
-                SET status='SUCCEEDED',
-                    value=?,
-                    value_json=?,
-                    receipt=?,
-                    error_code=NULL,
-                    claimed_by=NULL,
-                    claimed_at=NULL
-                WHERE id=? AND status='RUNNING'
-                """,
+                """UPDATE records
+                   SET status='SUCCEEDED',
+                   value_json=?,
+                   receipt=?,
+                   error_code=NULL,
+                   claimed_by=NULL,
+                   claimed_at=NULL
+                   WHERE id=? AND status='RUNNING'""",
                 (
-                    canonical_json(body.get("value")),
-                    body.get("receipt"),
-                    record_id,
+                     canonical_json(body.get("value")),
+                     body.get("receipt"),
+                     record_id,
                 ),
             )
             refresh_job(conn, job_id)
