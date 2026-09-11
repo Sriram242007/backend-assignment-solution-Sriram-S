@@ -1,66 +1,174 @@
-# Backend: batch processing service
+# Backend Job Processing System
 
-## Problem statement
+A production-grade backend service for processing ZIP archives containing JSONL files through an external processor API. Implements robust job management, worker processing, idempotency, and comprehensive error handling.
 
-A team receives exports from different systems as ZIP archives containing JSONL files. Each record needs to be processed by an external service before the export can be used. The external service is slow, has finite capacity, and sometimes fails.
 
-Build a backend that accepts these archives, processes their records, tracks progress, and produces a final result for each file and for the complete archive.
+### Prerequisites
+- Python 3.8+
+- Windows/Linux/macOS
 
-One uploaded ZIP is a **job**. Each JSONL file is a **task**. Each non-empty line is a **record/subtask** requiring one logical call to the provided processor. The hierarchy is fixed by the input; arbitrary recursive workflows are not required.
+### Setup
 
-No frontend, authentication system, real AI model, or document-processing library is required.
-
-## Core requirements
-
-### Ingestion and APIs
-
-Implement these endpoints using the contract in [docs/CONTRACT.md](docs/CONTRACT.md):
-
-```text
-POST /jobs
-GET  /jobs/{job_id}
-GET  /jobs/{job_id}/result
-GET  /health
+1. **Clone/download the repository**
+```bash
+cd backend-assignment
 ```
 
-Accept a ZIP upload, validate it, and return a job identifier. Repeating the same submission with the same idempotency key must not create another job. Reject invalid records and unsafe archives before submitting their records to the processor.
+2. **Create virtual environment**
+```bash
+python -m venv venv
 
-### Processing
+# Windows
+venv\Scripts\activate
 
-Use the provided API to process every record. Records have different processing times, deadlines, and retry budgets. The processor normally fails approximately 5% of logical attempts and rejects excess concurrent requests.
+# Linux/macOS
+source venv/bin/activate
+```
 
-Multiple jobs and independently running workers must be supported. A worker restart must not lose accepted work. Repeated execution must not create duplicate logical results or inflate aggregates. Work that has exhausted its retry budget must reach a terminal failure state rather than retry forever.
+3. **Install dependencies**
+```bash
+pip install -r requirements.txt
+```
 
-The exact downstream capacity is not part of the contract. It is fixed within an evaluation run but may differ between runs. You receive the processor source and a local configuration; evaluation configuration is controlled by the evaluator.
+4. **Initialize database**
+```bash
+python main.py  # This creates database automatically
+```
 
-### State and results
+## Running the Backend
 
-Expose internally consistent progress. A file is terminal only when all its records are terminal. A job is terminal only when ingestion is complete and every file is terminal. Continue processing other records when one record fails.
+### Configuration
 
-Return each successful record's processor output and receipt, each failed record's terminal error, a per-file sum of successful values, and an archive-wide sum. Failed records do not contribute a value. Published terminal results must not change.
+Copy and customize `.env.example` to `.env`:
+```bash
+copy .env.example .env  # Windows
+cp .env.example .env    # Linux/macOS
+```
 
-### Efficiency
+### Start API Server
 
-Minimize end-to-end completion time **without sacrificing correctness**. Evaluation includes uneven record durations, multiple files, overlapping jobs, and workloads substantially larger than the processor's capacity. Faster incorrect results receive no valid performance score.
+```bash
+# Terminal 1: Start API on port 8080
+python main.py
+```
 
-A configurable, stable implementation is sufficient. The main performance inputs use actual second-scale processing durations; the short smoke inputs are only for correctness checks. Automatically discovering an optimal concurrency limit, implementing a general workflow language, and deploying Kubernetes are not required.
+### Start Workers
 
-## Implementation rules
+```bash
+# Terminal 2: Start Worker 1
+set BACKEND_MODE=worker
+set WORKER_ID=worker-1
+python main.py
 
-Choose your own language, database, broker, and service structure. General HTTP, database, queue, and concurrency libraries are allowed. Do not delegate the entire execution problem to an existing workflow/job orchestration framework: the submission must own its job state, retry behavior, and aggregation logic. No specific concurrency primitive is banned.
+# Terminal 3: Start Worker 2
+set BACKEND_MODE=worker
+set WORKER_ID=worker-2
+python main.py
+```
+### Start Processor (from assignment repo)
 
-Do not modify or bypass the supplied processor during evaluation. Computing its output locally is not a substitute for calling it.
+```bash
+# Terminal 4: Start the processor
+cd path/to/cit-backend-eval-2026
+./run-processor.cmd  # Windows
+./run-processor.sh   # Linux/macOS
+```
+Expected output:
 
-## What is provided
+Processor running on http://0.0.0.0:8001
 
-This repository contains the downstream simulator, 17 valid sample archives, 10 invalid-input cases, a fixture generator, and a black-box benchmark with named presets. **It does not contain the backend you are being asked to build.**
+## API Endpoints
 
-Start with [QUICKSTART.md](QUICKSTART.md). The provided tools run natively on Windows, Linux, and macOS; Docker is also documented as an optional route for the supplied processor. See [samples/README.md](samples/README.md) for workloads, [docs/PROCESSOR.md](docs/PROCESSOR.md) for its behavior, and [docs/BENCHMARKS.md](docs/BENCHMARKS.md) to test your submission.
+### Health Check
+```bash
+curl http://localhost:8080/health
+```
 
-## Submission requirements
+Response:
+```json
+{"status": "ok"}
+```
 
-See [SUBMISSION.md](SUBMISSION.md) for the fork submission format and checklist.
+### Create Job (Upload ZIP)
+```bash
+curl -X POST \
+  -H "X-Run-ID: test-run-001" \
+  -H "Idempotency-Key: upload-001" \
+  -F "file=@test.zip" \
+  http://localhost:8080/jobs
+```
 
-Submit a repository containing source code, setup instructions, `.env.example`, tests, and `DESIGN.md`. Include commands to start the API and at least two workers, run a benchmark, and restart a worker without deleting job state.
+Response:
+```json
+{
+  "job_id": "job-abc123...",
+  "status": "QUEUED"
+}
+```
 
-Explain your state model, what happens at relevant crash points, how you measured performance, the tradeoffs you made, and the limitations you did not solve. Include your own benchmark results and the exact resource/configuration settings used. Be prepared to explain and modify the implementation during review, including any generated or borrowed code.
+### Get Job Progress
+```bash
+curl http://localhost:8080/jobs/job-abc123...
+```
+
+Response:
+```json
+{
+  "job_id": "job-abc123...",
+  "status": "RUNNING",
+  "ingestion_complete": true,
+  "files_total": 2,
+  "files_terminal": 0,
+  "records_total": 100,
+  "records_succeeded": 45,
+  "records_failed": 2,
+  "records_running": 20,
+  "records_pending": 33
+}
+```
+
+### Get Final Results
+```bash
+curl http://localhost:8080/jobs/job-abc123.../result
+```
+
+Response (when job is terminal):
+```json
+{
+  "job_id": "job-abc123...",
+  "status": "SUCCEEDED",
+  "files": [
+    {
+      "task_id": "users.jsonl",
+      "status": "SUCCEEDED",
+      "records_total": 50,
+      "records_succeeded": 48,
+      "records_failed": 2,
+      "value_sum": 5000,
+      "records": [
+        {
+          "record_id": "user-1",
+          "status": "SUCCEEDED",
+          "attempts": 1,
+          "value": 100,
+          "receipt": "receipt-123"
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "files": 1,
+    "records": 50,
+    "succeeded": 48,
+    "failed": 2,
+    "value_sum": 5000
+  }
+}
+```
+
+## Testing
+
+### Run Test Script
+```bash
+python test_backend.py
+```
